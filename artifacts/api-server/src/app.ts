@@ -1,9 +1,15 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 import pinoHttp from "pino-http";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import serveStatic from "serve-static";
 import router from "./routes";
 import { logger } from "./lib/logger";
+
+const PgSession = connectPgSimple(session);
 
 const app: Express = express();
 
@@ -12,26 +18,31 @@ app.use(
     logger,
     serializers: {
       req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
+        return { id: req.id, method: req.method, url: req.url?.split("?")[0] };
       },
       res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
+        return { statusCode: res.statusCode };
       },
     },
   }),
 );
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Use PostgreSQL session store when DATABASE_URL is available (required for Vercel serverless)
+const sessionStore = process.env.DATABASE_URL
+  ? new PgSession({
+      conString: process.env.DATABASE_URL,
+      tableName: "user_sessions",
+      createTableIfMissing: true,
+    })
+  : undefined;
+
 app.use(
   session({
+    store: sessionStore,
     secret: process.env.SESSION_SECRET ?? "basketball-secret-change-in-prod",
     resave: false,
     saveUninitialized: false,
@@ -45,17 +56,11 @@ app.use(
 
 app.use("/api", router);
 
-// In production: serve the built React app and handle client-side routing
-if (process.env.NODE_ENV === "production") {
-  const { default: path } = await import("path");
-  const { fileURLToPath } = await import("url");
+// Serve static React build when SERVE_STATIC=true (for Render / standalone deploys)
+if (process.env.SERVE_STATIC === "true") {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const staticPath = path.join(__dirname, "../../basketball-app/dist/public");
-
-  const { default: serveStatic } = await import("serve-static");
   app.use(serveStatic(staticPath));
-
-  // Catch-all: return index.html for client-side routes
   app.get("*", (_req, res) => {
     res.sendFile(path.join(staticPath, "index.html"));
   });

@@ -8,7 +8,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: SERVE_STATIC
+        value: "true"
       - key: DATABASE_URL
-        sync: false   # paste your Supabase connection string here after deploy
+        sync: false
       - key: SESSION_SECRET
-        sync: false   # set any long random string
+        sync: false
